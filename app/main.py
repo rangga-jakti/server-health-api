@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from .database import Base, engine
 from .auth.router import router as auth_router
 from .metrics.router import router as metrics_router
@@ -16,6 +18,8 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
 app.include_router(auth_router)
 app.include_router(metrics_router)
 
@@ -26,7 +30,6 @@ def collect_metrics():
         cpu = data["cpu"]["cpu_percent"]
         ram = data["ram"]["ram_percent"]
         disk = data["disk"]["disk_percent"]
-        
         record = MetricHistory(
             cpu_percent=cpu,
             ram_percent=ram,
@@ -34,7 +37,6 @@ def collect_metrics():
         )
         db.add(record)
         db.commit()
-        
         check_and_alert(cpu, ram, disk)
     finally:
         db.close()
@@ -49,4 +51,4 @@ def shutdown_event():
 
 @app.get("/")
 def root():
-    return {"message": "Server Health Monitor API is running"}
+    return FileResponse("app/static/index.html")

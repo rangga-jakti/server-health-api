@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Server Health Monitor</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0f172a; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; }
+    header { background: #1e293b; padding: 20px 40px; border-bottom: 1px solid #334155; }
+    header h1 { font-size: 1.5rem; color: #38bdf8; }
+    header p { font-size: 0.85rem; color: #64748b; margin-top: 4px; }
+    .container { padding: 30px 40px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+    .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+    .card h3 { font-size: 0.8rem; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+    .card .value { font-size: 2rem; font-weight: bold; }
+    .card .unit { font-size: 0.85rem; color: #64748b; }
+    .cpu-color { color: #38bdf8; }
+    .ram-color { color: #a78bfa; }
+    .disk-color { color: #34d399; }
+    .net-color { color: #fb923c; }
+    .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; margin-bottom: 30px; }
+    .chart-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+    .chart-card h3 { font-size: 0.9rem; color: #94a3b8; margin-bottom: 15px; }
+    .login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .login-box { background: #1e293b; border-radius: 16px; padding: 40px; width: 360px; border: 1px solid #334155; }
+    .login-box h2 { color: #38bdf8; margin-bottom: 8px; }
+    .login-box p { color: #64748b; font-size: 0.85rem; margin-bottom: 24px; }
+    .login-box input { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; margin-bottom: 12px; font-size: 0.9rem; }
+    .login-box button { width: 100%; padding: 12px; background: #38bdf8; color: #0f172a; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.95rem; }
+    .login-box button:hover { background: #7dd3fc; }
+    .error { color: #f87171; font-size: 0.85rem; margin-top: 8px; display: none; }
+    .status { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #34d399; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  </style>
+</head>
+<body>
+
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <h2>🖥️ Server Health</h2>
+    <p>Monitor — Login to continue</p>
+    <input type="text" id="username" placeholder="Username" />
+    <input type="password" id="password" placeholder="Password" />
+    <button onclick="login()">Login</button>
+    <div class="error" id="loginError">Invalid credentials</div>
+  </div>
+</div>
+
+<header>
+  <h1>🖥️ Server Health Monitor</h1>
+  <div class="status">
+    <div class="dot"></div>
+    <p id="lastUpdate">Connecting...</p>
+  </div>
+</header>
+
+<div class="container">
+  <div class="cards">
+    <div class="card">
+      <h3>CPU Usage</h3>
+      <div class="value cpu-color" id="cpuVal">--%</div>
+      <div class="unit" id="cpuCore">-- cores</div>
+    </div>
+    <div class="card">
+      <h3>RAM Usage</h3>
+      <div class="value ram-color" id="ramVal">--%</div>
+      <div class="unit" id="ramDetail">-- / --</div>
+    </div>
+    <div class="card">
+      <h3>Disk Usage</h3>
+      <div class="value disk-color" id="diskVal">--%</div>
+      <div class="unit" id="diskDetail">-- / --</div>
+    </div>
+    <div class="card">
+      <h3>Network</h3>
+      <div class="value net-color" id="netConn">--</div>
+      <div class="unit">active connections</div>
+    </div>
+  </div>
+
+  <div class="charts">
+    <div class="chart-card">
+      <h3>CPU & RAM History</h3>
+      <canvas id="historyChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Disk Usage</h3>
+      <canvas id="diskChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+  let token = localStorage.getItem('token');
+  let historyChart, diskChart;
+
+  if (token) document.getElementById('loginOverlay').style.display = 'none';
+
+  async function login() {
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    const form = new FormData();
+    form.append('username', username);
+    form.append('password', password);
+    const res = await fetch('/auth/login', { method: 'POST', body: form });
+    if (res.ok) {
+      const data = await res.json();
+      token = data.access_token;
+      localStorage.setItem('token', token);
+      document.getElementById('loginOverlay').style.display = 'none';
+      fetchData();
+    } else {
+      document.getElementById('loginError').style.display = 'block';
+    }
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+  }
+
+  async function fetchData() {
+    const headers = { 'Authorization': 'Bearer ' + token };
+    try {
+      const [summary, network, history] = await Promise.all([
+        fetch('/metrics/summary', { headers }).then(r => r.json()),
+        fetch('/metrics/network', { headers }).then(r => r.json()),
+        fetch('/metrics/history', { headers }).then(r => r.json())
+      ]);
+
+      document.getElementById('cpuVal').textContent = summary.cpu.cpu_percent + '%';
+      document.getElementById('cpuCore').textContent = summary.cpu.cpu_count + ' cores @ ' + summary.cpu.cpu_freq.current.toFixed(0) + ' MHz';
+      document.getElementById('ramVal').textContent = summary.ram.ram_percent + '%';
+      document.getElementById('ramDetail').textContent = formatBytes(summary.ram.used) + ' / ' + formatBytes(summary.ram.total);
+      document.getElementById('diskVal').textContent = summary.disk.disk_percent + '%';
+      document.getElementById('diskDetail').textContent = formatBytes(summary.disk.used) + ' / ' + formatBytes(summary.disk.total);
+      document.getElementById('netConn').textContent = network.active_connections;
+      document.getElementById('lastUpdate').textContent = 'Last update: ' + new Date().toLocaleTimeString();
+
+      const labels = history.map(h => new Date(h.recorded_at).toLocaleTimeString()).reverse();
+      const cpuData = history.map(h => h.cpu_percent).reverse();
+      const ramData = history.map(h => h.ram_percent).reverse();
+      const diskData = history.map(h => h.disk_percent).reverse();
+
+      if (historyChart) historyChart.destroy();
+      historyChart = new Chart(document.getElementById('historyChart'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label: 'CPU %', data: cpuData, borderColor: '#38bdf8', tension: 0.4, fill: false },
+            { label: 'RAM %', data: ramData, borderColor: '#a78bfa', tension: 0.4, fill: false }
+          ]
+        },
+        options: { scales: { y: { min: 0, max: 100 } }, plugins: { legend: { labels: { color: '#94a3b8' } } } }
+      });
+
+      if (diskChart) diskChart.destroy();
+      diskChart = new Chart(document.getElementById('diskChart'), {
+        type: 'doughnut',
+        data: {
+          labels: ['Used', 'Free'],
+          datasets: [{ data: [summary.disk.disk_percent, 100 - summary.disk.disk_percent], backgroundColor: ['#34d399', '#1e293b'] }]
+        },
+        options: { plugins: { legend: { labels: { color: '#94a3b8' } } } }
+      });
+
+    } catch(e) {
+      console.error(e);
+    }
+  }
+
+  if (token) fetchData();
+  setInterval(fetchData, 30000);
+</script>
+</body>
+</html>
