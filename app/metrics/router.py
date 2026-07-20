@@ -31,6 +31,10 @@ def disk(user=Depends(get_current_user)):
 def processes(user=Depends(get_current_user)):
     return collector.get_processes()
 
+@router.get("/network")
+def network(user=Depends(get_current_user)):
+    return collector.get_network()
+
 @router.get("/summary")
 def summary(db: Session = Depends(get_db), user=Depends(get_current_user)):
     data = collector.get_summary()

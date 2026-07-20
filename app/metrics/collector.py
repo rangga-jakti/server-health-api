@@ -38,5 +38,17 @@ def get_summary():
     return {
         "cpu": get_cpu(),
         "ram": get_ram(),
-        "disk": get_disk()
+        "disk": get_disk(),
+        "network": get_network()
+    }
+    
+def get_network():
+    net = psutil.net_io_counters()
+    connections = psutil.net_connections()
+    return {
+        "bytes_sent": net.bytes_sent,
+        "bytes_recv": net.bytes_recv,
+        "packets_sent": net.packets_sent,
+        "packets_recv": net.packets_recv,
+        "active_connections": len(connections)
     }
