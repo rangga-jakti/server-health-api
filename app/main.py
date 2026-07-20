@@ -5,6 +5,7 @@ from .metrics.router import router as metrics_router
 from .metrics.collector import get_summary
 from .database import SessionLocal
 from .models import MetricHistory
+from .alert import check_and_alert
 from apscheduler.schedulers.background import BackgroundScheduler
 
 Base.metadata.create_all(bind=engine)
@@ -22,13 +23,19 @@ def collect_metrics():
     db = SessionLocal()
     try:
         data = get_summary()
+        cpu = data["cpu"]["cpu_percent"]
+        ram = data["ram"]["ram_percent"]
+        disk = data["disk"]["disk_percent"]
+        
         record = MetricHistory(
-            cpu_percent=data["cpu"]["cpu_percent"],
-            ram_percent=data["ram"]["ram_percent"],
-            disk_percent=data["disk"]["disk_percent"]
+            cpu_percent=cpu,
+            ram_percent=ram,
+            disk_percent=disk
         )
         db.add(record)
         db.commit()
+        
+        check_and_alert(cpu, ram, disk)
     finally:
         db.close()
 
